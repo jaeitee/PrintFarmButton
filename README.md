@@ -2,6 +2,14 @@
 NOTE: This is a fork of Spencer's original PrintFarmButton project.
 If you are looking to deloy to your farm visit his project directly: https://github.com/spuder/PrintFarmButton 
 
+![PrintFarmButton](images/button_blue.png)
+
+Main Differences:
+1) GUI Hanging/Freezeing with 5+ Printers.  
+This was a buffer overload issue due to the response size being larger than 8kb, fixed.
+2) Warming / Heat Soak function for materials other than PLA/TPU.
+In the PrintFarmButton GUI you can now set a heat soak time, default is 15 minutes.
+
 This fork of the proejct exists only for me to test features within my own farm, which may or may not work.  
 
 ### Printago States:  
