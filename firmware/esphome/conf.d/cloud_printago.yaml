@@ -82,7 +82,10 @@ script:
   then:
   - lambda: |-
       ESP_LOGI("printago", "Clearing printer selection");
-      id(printer_id).publish_state("");
+      // make_call → control() persists to NVS; publish_state alone does not.
+      auto call = id(printer_id).make_call();
+      call.set_value("");
+      call.perform();
       id(printer_name).publish_state("");
 
 - id: check_printago_status
@@ -213,13 +216,13 @@ script:
                   condition:
                     lambda: 'return id(is_warming).state;'
                   then:
-                  # Orange (Warming / heat soak)
+                  # Orange (Warming / heat soak) — solid, no pulse
                   - light.turn_on:
                       id: printfarmbutton_rgb
                       red: 1.0
                       green: 0.4
                       blue: 0.0
-                      effect: Pulse
+                      effect: none
                       brightness: 90%
                   else:
                   - if:
@@ -286,14 +289,15 @@ script:
       then:
       - script.execute: skip_heat_soak
       else:
+      - lambda: 'id(ready_http_retries) = 0;'
       - script.execute: mark_printer_ready
 
 - id: skip_heat_soak
   mode: queued
   then:
   - lambda: |-
-      ESP_LOGI("printago", "Skipping remaining heat soak");
-      id(heat_soak_start_ms) = 0;
+      ESP_LOGI("printago", "Skipping remaining heat soak (timer kept until resume succeeds)");
+      id(resume_http_retries) = 0;
   - script.execute: resume_print
 
 - id: resume_print
@@ -306,6 +310,12 @@ script:
         - lambda: 'return !id(api_key_text).state.empty();'
         - lambda: 'return !id(storeid_text).state.empty();'
       then:
+      # Drop MQTT TLS socket so HTTPS can connect (ESP32-C3 socket starvation).
+      - lambda: |-
+          ESP_LOGI("printago", "Pausing MQTT for resume HTTPS");
+          id(mqtt_api_pause) = true;
+          id(mqtt_client_id).disable();
+      - delay: 1s
       - http_request.send:
           method: POST
           url: "https://api.printago.io/v1/printer-commands/send"
@@ -334,10 +344,32 @@ script:
                 if (response->status_code == 200 || response->status_code == 201) {
                   ESP_LOGI("printago", "Print resumed (heat soak skipped or finished)");
                   id(heat_soak_start_ms) = 0;
+                  id(resume_http_retries) = 0;
                   id(is_warming).publish_state(false);
                 } else {
-                  ESP_LOGW("printago", "Failed to resume print");
+                  ESP_LOGW("printago", "Failed to resume print (%d): %s",
+                           response->status_code, body.c_str());
                 }
+                id(mqtt_api_pause) = false;
+                id(mqtt_client_id).enable();
+          on_error:
+            then:
+            - if:
+                condition:
+                  lambda: 'return id(resume_http_retries) < 3;'
+                then:
+                - lambda: |-
+                    id(resume_http_retries)++;
+                    ESP_LOGW("printago", "Resume HTTP connect failed, retry %d/3 (MQTT still paused)",
+                             id(resume_http_retries));
+                - delay: 2s
+                - script.execute: resume_print
+                else:
+                - lambda: |-
+                    id(resume_http_retries) = 0;
+                    ESP_LOGE("printago", "Resume HTTP connect failed after 3 retries; restoring MQTT");
+                    id(mqtt_api_pause) = false;
+                    id(mqtt_client_id).enable();
       else:
       - lambda: |-
           ESP_LOGW("printago", "Not running resume_print: printer_id, api_key, or storeid missing");
@@ -356,6 +388,11 @@ script:
         - lambda: 'return !id(printer_confirmed_ready_sensor).state;'
         - lambda: 'return id(printer_is_available_sensor).state;'
       then:
+      - lambda: |-
+          ESP_LOGI("printago", "Pausing MQTT for confirm-ready HTTPS");
+          id(mqtt_api_pause) = true;
+          id(mqtt_client_id).disable();
+      - delay: 1s
       - http_request.send:
           method: PATCH
           url: !lambda |-
@@ -384,9 +421,34 @@ script:
                 ESP_LOGI("printago", "Mark printer ready response: %d", response->status_code);
                 if (response->status_code == 200) {
                   ESP_LOGI("printago", "Printer marked as ready");
+                  id(ready_http_retries) = 0;
+                  // Optimistic UI: entities MQTT may lag after reconnect.
+                  id(printer_confirmed_ready_sensor).publish_state(true);
                 } else {
-                  ESP_LOGW("printago", "Failed to mark printer as ready");
+                  ESP_LOGW("printago", "Failed to mark printer as ready (%d): %s",
+                           response->status_code, body.c_str());
                 }
+                id(mqtt_api_pause) = false;
+                id(mqtt_client_id).enable();
+            - script.execute: update_led_color
+          on_error:
+            then:
+            - if:
+                condition:
+                  lambda: 'return id(ready_http_retries) < 3;'
+                then:
+                - lambda: |-
+                    id(ready_http_retries)++;
+                    ESP_LOGW("printago", "Confirm-ready HTTP connect failed, retry %d/3 (MQTT still paused)",
+                             id(ready_http_retries));
+                - delay: 2s
+                - script.execute: mark_printer_ready
+                else:
+                - lambda: |-
+                    id(ready_http_retries) = 0;
+                    ESP_LOGE("printago", "Confirm-ready HTTP connect failed after 3 retries; restoring MQTT");
+                    id(mqtt_api_pause) = false;
+                    id(mqtt_client_id).enable();
       else:
       - lambda: |-
           ESP_LOGW("printago", "Not running mark_printer_ready: printer is not in the correct state (must be available and not already confirmed ready), or required fields are missing");
@@ -497,7 +559,10 @@ script:
                       std::string first_id = id(printago_printer_ids)[0];
                       std::string first_name = id(printago_printer_names)[0];
                       ESP_LOGI("printago", "Auto-selecting single printer: %s (%s)", first_name.c_str(), first_id.c_str());
-                      id(printer_id).publish_state(first_id);
+                      // make_call → control() persists to NVS; publish_state alone does not.
+                      auto call = id(printer_id).make_call();
+                      call.set_value(first_id);
+                      call.perform();
                     } else if (id(printago_printer_ids).size() == 0) {
                       id(clear_printer_selection).execute();
                     }
@@ -663,6 +728,11 @@ text:
         // Refresh printer list when API key changes
         if (!x.empty() && !id(storeid_text).state.empty()) {
           id(fetch_printago_printers).execute();
+          // If printer_id restored before credentials, MQTT never enabled — retry now.
+          std::string pid = id(printer_id).state;
+          if (!pid.empty()) {
+            id(printer_id).publish_state(pid);
+          }
         }
 
 - platform: template
@@ -685,6 +755,11 @@ text:
         // Refresh printer list when Store ID changes
         if (!x.empty() && !id(api_key_text).state.empty()) {
           id(fetch_printago_printers).execute();
+          // If printer_id restored before credentials, MQTT never enabled — retry now.
+          std::string pid = id(printer_id).state;
+          if (!pid.empty()) {
+            id(printer_id).publish_state(pid);
+          }
         }
 
 - platform: template
@@ -764,14 +839,42 @@ text:
           }
 
           // Handle health status
+          // Bambu user-pause HMS (M400 U1 / screen pause) is reported as PRINT ERROR
+          // but is not a hard fault — keep LED from going red over orange warming.
           bool error_state = false;
           bool warning_state = false;
           if (!root["data"].isNull()) {
             JsonObject data = root["data"];
             if (!data["health"].isNull()) {
               JsonObject health = data["health"];
-              if (!health["errors"].isNull() && health["errors"].is<JsonArray>() && health["errors"].size() > 0) {
-                error_state = true;
+              auto is_user_pause_hms = [](JsonObject err) -> bool {
+                const char* code = err["code"];
+                const char* msg = err["message"];
+                auto normalize = [](const char* s) -> std::string {
+                  std::string out;
+                  if (s == nullptr) return out;
+                  for (const char* p = s; *p; ++p) {
+                    char c = (char)tolower((unsigned char)*p);
+                    if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) out.push_back(c);
+                  }
+                  return out;
+                };
+                std::string c = normalize(code);
+                if (c == "03008013" || c == "03008001" || c == "03008000") return true;
+                if (msg != nullptr) {
+                  std::string m(msg);
+                  for (char &ch : m) ch = (char)tolower((unsigned char)ch);
+                  if (m.find("paused by the user") != std::string::npos) return true;
+                }
+                return false;
+              };
+              if (!health["errors"].isNull() && health["errors"].is<JsonArray>()) {
+                for (JsonObject err : health["errors"].as<JsonArray>()) {
+                  if (!is_user_pause_hms(err)) {
+                    error_state = true;
+                    break;
+                  }
+                }
               }
               if (!health["warnings"].isNull() && health["warnings"].is<JsonArray>() && health["warnings"].size() > 0) {
                 warning_state = true;
@@ -913,12 +1016,8 @@ select:
       }
     }
 
-    // If we have printers but current_id doesn't match any, return first printer name
-    if (!names.empty()) {
-      return names[0];
-    }
-
-    // Fallback
+    // Do not fake the first printer as selected when printer_id is empty/unknown —
+    // that hid the "selection not persisted" bug after reboot.
     return std::string("No printers available");
   set_action:
     then:
@@ -940,7 +1039,11 @@ select:
             std::string selected_id = ids[i];
             std::string selected_name = names[i];
             ESP_LOGI("printago", "Selected printer: %s (ID: %s)", selected_name.c_str(), selected_id.c_str());
-            id(printer_id).publish_state(selected_id);
+            // make_call → control() persists to NVS; publish_state alone does not
+            // (so reboot previously lost the selection).
+            auto call = id(printer_id).make_call();
+            call.set_value(selected_id);
+            call.perform();
             // Trigger UI updates
             id(available_printers_display).update();
             return;
@@ -1020,9 +1123,20 @@ globals:
   restore_value: false
 
 # millis() when heat soak (M400 U1) was first observed. 0 = not timing.
-# Survives WiFi/MQTT drops; only cleared when soak ends or is skipped.
+# Survives WiFi/MQTT drops; only cleared when soak ends or resume HTTP succeeds.
 - id: heat_soak_start_ms
   type: uint32_t
+  restore_value: false
+  initial_value: '0'
+
+# HTTPS connect retries for button actions (ESP32-C3 MQTT+TLS socket pressure).
+- id: resume_http_retries
+  type: uint8_t
+  restore_value: false
+  initial_value: '0'
+
+- id: ready_http_retries
+  type: uint8_t
   restore_value: false
   initial_value: '0'
 
@@ -1042,4 +1156,5 @@ interval:
       then:
       - lambda: |-
           ESP_LOGI("printago", "Heat soak auto-resume: 15 min elapsed");
+          id(resume_http_retries) = 0;
       - script.execute: resume_print

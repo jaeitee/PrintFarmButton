@@ -12,7 +12,25 @@ wifi:
         condition:
           lambda: 'return id(cloud_connection).state == "Printago";'
         then:
-        - script.execute: check_printago_status
+        # After power loss / OTA reboot: credentials + printer_id restore from flash, but
+        # MQTT is enable_on_boot: false and the printer list is RAM-only. Boot restore can
+        # also race (printer_id before storeid) and leave MQTT disabled. Re-apply here once
+        # the network is up so buttons reconnect without opening the web UI.
+        - lambda: |-
+            id(mqtt_client_id_stored).update();
+            bool have_creds = !id(api_key_text).state.empty() && !id(storeid_text).state.empty();
+            if (have_creds && id(printago_printer_ids).empty()) {
+              ESP_LOGI("printago", "WiFi up — fetching printer list for UI");
+              id(fetch_printago_printers).execute();
+            }
+            std::string pid = id(printer_id).state;
+            if (!pid.empty()) {
+              ESP_LOGI("printago", "WiFi up — reconnecting saved printer: %s", pid.c_str());
+              // Re-publish so printer_id on_value enables MQTT + resubscribes.
+              id(printer_id).publish_state(pid);
+            } else {
+              id(check_printago_status).execute();
+            }
     # - component.update: firmware_update #TODO: This doesn't update for some reason
   on_disconnect:
     then:

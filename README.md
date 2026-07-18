@@ -18,6 +18,8 @@ Add this to your **printer machine start G-code** (Bambu Studio / Orca → Print
 
 Use `M400 U1` (wait for Resume), **not** `M400 S900` (timed dwell). Only a Resume pause can be skipped from the farm button.
 
+There is **no timed wait in G-code** — the printer pauses until Resume. The button enforces ~15 minutes (tap to skip early). Printago may show `0300-8013` (“paused by the user”); that is expected, not a fault.
+
 ```gcode
 M190 S[bed_temperature_initial_layer_single] ; wait for bed temp
 
@@ -40,3 +42,7 @@ M400 U1 ; heat soak — resume to continue
 
 Flash firmware that includes the warming / resume feature for skip + auto-resume to work.
 
+**Notes**
+
+- Button tap (resume / mark ready) needs HTTPS to `api.printago.io`. MQTT alone can update the LED but cannot send commands.
+- Printago **virtual printers** do not reliably simulate `M400 U1` pauses — test heat soak on a real Bambu.

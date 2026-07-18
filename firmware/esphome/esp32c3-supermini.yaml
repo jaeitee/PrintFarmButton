@@ -9,6 +9,9 @@ esp32:
   board: esp32-c3-devkitm-1
   framework:
     type: esp-idf
+    sdkconfig_options:
+      # MQTT TLS + web UI (SSE log) + HTTPS API need concurrent sockets on C3.
+      CONFIG_LWIP_MAX_SOCKETS: "16"
 packages:
   common: !include common.yaml
   button: !include conf.d/button.yaml

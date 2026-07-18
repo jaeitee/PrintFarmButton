@@ -48,6 +48,10 @@ ota:
 
 http_request:
   verify_ssl: false
+  # MQTT TLS + HTTPS to api.printago.io compete for sockets on ESP32-C3;
+  # longer timeouts reduce ESP_ERR_HTTP_CONNECT flakiness on button actions.
+  timeout: 15s
+  watchdog_timeout: 30s
 
 improv_serial:
   next_url: http://{{device_name}}.local

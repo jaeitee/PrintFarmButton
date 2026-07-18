@@ -1,6 +1,6 @@
 {
   "name": "PrintFarmButton SuperMini",
-  "version": "1.7.10",
+  "version": "1.0.8-persist-printer",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
@@ -20,7 +20,7 @@
       "chipFamily": "ESP32-C3",
       "ota": {
         "path": "printfarmbutton-supermini-esp32c3.ota.bin",
-        "md5": "a6092d420b71639dfa121d9b3b081fd8"
+        "md5": "ef85d87cf4686bc3a0b4874d0b5b1092"
       },
       "parts": [
         {

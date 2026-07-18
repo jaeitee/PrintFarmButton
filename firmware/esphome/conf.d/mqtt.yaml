@@ -1,3 +1,10 @@
+# True while MQTT is intentionally paused for Printago HTTPS (suppress disconnect rainbow).
+globals:
+- id: mqtt_api_pause
+  type: bool
+  restore_value: false
+  initial_value: 'false'
+
 mqtt:
   id: mqtt_client_id
   broker: "realtime.printago.io"
@@ -74,10 +81,19 @@ mqtt:
   on_connect:
     then:
     - logger.log: "MQTT Connected - restoring LED state"
+    - lambda: 'id(mqtt_api_pause) = false;'
+    # Reconcile confirmedReady from REST — entities MQTT is not retained, so a
+    # Printago not-ready during confirm-ready/resume MQTT pause would otherwise stick.
+    - script.execute: check_printago_status
     - script.execute: update_led_color # Restore proper LED state
   on_disconnect:
     then:
     - logger.log: "MQTT Disconnected"
-    - light.turn_on:
-        id: printfarmbutton_rgb
-        effect: Rainbow
+    # Skip rainbow during brief MQTT pause for Printago HTTPS (resume / confirm-ready).
+    - if:
+        condition:
+          lambda: 'return !id(mqtt_api_pause);'
+        then:
+        - light.turn_on:
+            id: printfarmbutton_rgb
+            effect: Rainbow

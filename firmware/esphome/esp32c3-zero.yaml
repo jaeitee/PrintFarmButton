@@ -9,6 +9,8 @@ esp32:
   board: esp32-c3-devkitm-1
   framework:
     type: esp-idf
+    sdkconfig_options:
+      CONFIG_LWIP_MAX_SOCKETS: "16"
 packages:
   common: !include common.yaml
   button: !include conf.d/button.yaml
