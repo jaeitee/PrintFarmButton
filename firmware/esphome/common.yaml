@@ -16,6 +16,8 @@ esphome:
         // Set version once at boot
         id(printfarmbutton_version).publish_state("${version}");
         ESP_LOGI("version", "Set installed version to: ${version}");
+        // Ensure MQTT username/password/client_id match restored Store ID + API key
+        id(mqtt_client_id_stored).update();
     - if:
         condition:
           lambda: 'return id(cloud_connection).state == "Printago";'

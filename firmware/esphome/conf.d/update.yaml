@@ -49,7 +49,7 @@ switch:
   name: "Auto Update"
   id: auto_update_switch
   optimistic: true
-  restore_mode: RESTORE_DEFAULT_ON # Make the switch state persistent across reboots and firmware updates
+  restore_mode: RESTORE_DEFAULT_OFF # Default off; persists if the user later enables it
   web_server:
     sorting_group_id: updates
   icon: mdi:autorenew

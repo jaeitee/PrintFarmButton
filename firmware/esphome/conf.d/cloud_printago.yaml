@@ -577,35 +577,34 @@ text_sensor:
     sorting_weight: 10
   icon: "mdi:identifier"
   lambda: |-
-    std::string username = id(storeid_text).state;
+    // Printago MQTT auth: username = store ID, password = API key,
+    // client_id = apiclient_{first 24 chars of API key}_{suffix}
+    std::string store = id(storeid_text).state;
+    store.erase(std::remove_if(store.begin(), store.end(), ::isspace), store.end());
+    std::string key = id(api_key_text).state;
+    key.erase(std::remove_if(key.begin(), key.end(), ::isspace), key.end());
 
-    // Clean username
-    username.erase(std::remove_if(username.begin(), username.end(), ::isspace), username.end());
-
-    if (!username.empty()) {
-      // Generate MQTT client_id from username and last 6 digits of MAC address
-      std::string mac = get_mac_address();
-      mac.erase(std::remove(mac.begin(), mac.end(), ':'), mac.end());
-      
-      // Get last 6 digits of MAC address
-      std::string mac_suffix = mac.length() >= 6 ? mac.substr(mac.length() - 6) : mac;
-      
-      std::string client_id = "apiclient_" + username + "_" + mac_suffix;
-      
-      // Set MQTT credentials
-      id(mqtt_client_id).set_username(username.c_str());
-      id(mqtt_client_id).set_client_id(client_id.c_str());
-      
-      ESP_LOGI("mqtt", "Generated client_id: %s", client_id.c_str());
-      ESP_LOGI("mqtt", "MQTT Credentials Set - Username: %s, Client ID: %s", username.c_str(), client_id.c_str());
-      ESP_LOGI("mqtt", "Current MQTT Config - Broker: %s, Port: %s", 
-               id(mqtt_endpoint_text).state.c_str(), 
-               id(mqtt_port_text).state.c_str());
-      return client_id;
-    } else {
-      ESP_LOGW("mqtt", "Username is empty, cannot generate client_id");
-      return std::string(""); // Return empty string if no username
+    if (store.empty()) {
+      ESP_LOGW("mqtt", "Store ID is empty, cannot generate client_id");
+      return std::string("");
     }
+
+    std::string mac = get_mac_address();
+    mac.erase(std::remove(mac.begin(), mac.end(), ':'), mac.end());
+    std::string mac_suffix = mac.length() >= 6 ? mac.substr(mac.length() - 6) : mac;
+    std::string key_id = key.substr(0, 24);
+    std::string client_id = "apiclient_" + key_id + "_" + mac_suffix;
+
+    id(mqtt_client_id).set_username(store.c_str());
+    id(mqtt_client_id).set_password(key.c_str());
+    id(mqtt_client_id).set_client_id(client_id.c_str());
+
+    ESP_LOGI("mqtt", "Generated client_id: %s", client_id.c_str());
+    ESP_LOGI("mqtt", "MQTT Credentials Set - Username (store): %s, Client ID: %s", store.c_str(), client_id.c_str());
+    ESP_LOGI("mqtt", "Current MQTT Config - Broker: %s, Port: %s",
+             id(mqtt_endpoint_text).state.c_str(),
+             id(mqtt_port_text).state.c_str());
+    return client_id;
   on_value:
     then:
     - lambda: |-
@@ -658,9 +657,9 @@ text:
   on_value:
     then:
     - lambda: |-
-        ESP_LOGI("mqtt", "API Key changed, updating MQTT client ID");
-        // Trigger client ID generation
-        id(mqtt_client_id).set_password(x.c_str());
+        ESP_LOGI("mqtt", "API Key changed, refreshing MQTT credentials");
+        // Regenerate username/password/client_id together
+        id(mqtt_client_id_stored).update();
         // Refresh printer list when API key changes
         if (!x.empty() && !id(storeid_text).state.empty()) {
           id(fetch_printago_printers).execute();
@@ -726,6 +725,8 @@ text:
         ESP_LOGI("mqtt", "All required fields set, enabling MQTT");
         id(clear_printago_status).execute();
         id(check_printago_status).execute();
+        // Refresh credentials from current Store ID + API key before connect
+        id(mqtt_client_id_stored).update();
         id(mqtt_client_id).enable();
 
         // Unsubscribe from previous topics
