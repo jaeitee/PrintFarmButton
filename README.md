@@ -28,9 +28,12 @@ There is **no timed wait in G-code** — the printer pauses until Resume. Soak d
 
 PLA and TPU skip the pause; all other filaments (PETG, ABS, ASA, PC, etc.) heat-soak.
 
+**Find**
 ```gcode
 M190 S[bed_temperature_initial_layer_single] ; wait for bed temp
-
+```
+**Add Below**
+```gcode
 ;===== Bed heat soak (start of print only) =====
 ; M400 U1 = wait for Resume (button tap, Printago, or printer UI).
 ; PrintFarmButton shows orange, auto-resumes after Heat soak (minutes), or skip early with a tap.
