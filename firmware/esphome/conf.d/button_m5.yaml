@@ -13,4 +13,4 @@ binary_sensor:
   on_press:
     then:
     - logger.log: "Internal button pressed"
-    - script.execute: mark_printer_ready
+    - script.execute: handle_button_press

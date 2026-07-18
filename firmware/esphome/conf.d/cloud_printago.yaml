@@ -65,6 +65,17 @@ binary_sensor:
     then:
     - script.execute: update_led_color
 
+- platform: template
+  name: "Is Warming"
+  id: is_warming
+  lambda: |-
+    return id(is_warming).state;
+  icon: "mdi:heat-wave"
+  internal: false
+  on_state:
+    then:
+    - script.execute: update_led_color
+
 script:
 - id: clear_printer_selection
   mode: queued
@@ -144,9 +155,12 @@ script:
   then:
   - lambda: |-
       // Clear all global printer status variables
+      id(heat_soak_start_ms) = 0;
       id(printer_confirmed_ready_sensor).publish_state(false);
       id(printer_is_available_sensor).publish_state(false);
       id(printer_is_online_sensor).publish_state(false);
+      id(is_downloading).publish_state(false);
+      id(is_warming).publish_state(false);
       id(printer_name).publish_state("");  // Clear printer name
 
       ESP_LOGI("printago", "Cleared all printer status globals - all set to false");
@@ -197,57 +211,137 @@ script:
               else:
               - if:
                   condition:
-                    and:
-                    - lambda: 'return id(printer_confirmed_ready_sensor).state;'
-                    - lambda: 'return id(printer_is_available_sensor).state;'
+                    lambda: 'return id(is_warming).state;'
                   then:
-                  # Blue (Ready)
+                  # Orange (Warming / heat soak)
                   - light.turn_on:
                       id: printfarmbutton_rgb
-                      red: 0.0
-                      green: 0.0
-                      blue: 1.0
-                      effect: none
+                      red: 1.0
+                      green: 0.4
+                      blue: 0.0
+                      effect: Pulse
                       brightness: 90%
                   else:
                   - if:
                       condition:
                         and:
-                        - lambda: 'return !id(printer_confirmed_ready_sensor).state;'
+                        - lambda: 'return id(printer_confirmed_ready_sensor).state;'
                         - lambda: 'return id(printer_is_available_sensor).state;'
                       then:
-                      # Magenta (Set Ready)
+                      # Blue (Ready)
                       - light.turn_on:
                           id: printfarmbutton_rgb
-                          red: 0.9
+                          red: 0.0
                           green: 0.0
-                          blue: 0.7
-                          effect: Pulse
+                          blue: 1.0
+                          effect: none
                           brightness: 90%
                       else:
                       - if:
                           condition:
                             and:
-                            - lambda: 'return !id(printer_is_available_sensor).state;'
                             - lambda: 'return !id(printer_confirmed_ready_sensor).state;'
+                            - lambda: 'return id(printer_is_available_sensor).state;'
                           then:
-                          # Green (Busy)
+                          # Magenta (Set Ready)
                           - light.turn_on:
                               id: printfarmbutton_rgb
-                              red: 0.0
-                              green: 1.0
-                              blue: 0.0
-                              effect: none
+                              red: 0.9
+                              green: 0.0
+                              blue: 0.7
+                              effect: Pulse
                               brightness: 90%
                           else:
-                          # Fallback/default
-                          - light.turn_on:
-                              id: printfarmbutton_rgb
-                              red: 1.0
-                              green: 1.0
-                              blue: 1.0
-                              effect: none
-                              brightness: 90%
+                          - if:
+                              condition:
+                                and:
+                                - lambda: 'return !id(printer_is_available_sensor).state;'
+                                - lambda: 'return !id(printer_confirmed_ready_sensor).state;'
+                              then:
+                              # Green (Busy)
+                              - light.turn_on:
+                                  id: printfarmbutton_rgb
+                                  red: 0.0
+                                  green: 1.0
+                                  blue: 0.0
+                                  effect: none
+                                  brightness: 90%
+                              else:
+                              # Fallback/default
+                              - light.turn_on:
+                                  id: printfarmbutton_rgb
+                                  red: 1.0
+                                  green: 1.0
+                                  blue: 1.0
+                                  effect: none
+                                  brightness: 90%
+
+# Physical button: skip heat soak while warming, otherwise mark bed clear/ready
+- id: handle_button_press
+  mode: queued
+  then:
+  - if:
+      condition:
+        lambda: 'return id(is_warming).state;'
+      then:
+      - script.execute: skip_heat_soak
+      else:
+      - script.execute: mark_printer_ready
+
+- id: skip_heat_soak
+  mode: queued
+  then:
+  - lambda: |-
+      ESP_LOGI("printago", "Skipping remaining heat soak");
+      id(heat_soak_start_ms) = 0;
+  - script.execute: resume_print
+
+- id: resume_print
+  mode: queued
+  then:
+  - if:
+      condition:
+        and:
+        - lambda: 'return !id(printer_id).state.empty();'
+        - lambda: 'return !id(api_key_text).state.empty();'
+        - lambda: 'return !id(storeid_text).state.empty();'
+      then:
+      - http_request.send:
+          method: POST
+          url: "https://api.printago.io/v1/printer-commands/send"
+          request_headers:
+            authorization: !lambda |-
+              static std::string key;
+              std::string raw_key = id(api_key_text).state;
+              raw_key.erase(std::remove_if(raw_key.begin(), raw_key.end(), ::isspace), raw_key.end());
+              key = "ApiKey " + raw_key;
+              return key.c_str();
+            x-printago-storeid: !lambda |-
+              static std::string store;
+              std::string raw_store = id(storeid_text).state;
+              raw_store.erase(std::remove_if(raw_store.begin(), raw_store.end(), ::isspace), raw_store.end());
+              store = raw_store;
+              return store.c_str();
+            content-type: application/json
+          body: !lambda |-
+            return std::string("{\"ids\":[\"") + id(printer_id).state + "\"],\"command\":{\"command\":\"resume\"}}";
+          capture_response: true
+          max_response_buffer_size: 2048
+          on_response:
+            then:
+            - lambda: |-
+                ESP_LOGI("printago", "Resume print response: %d", response->status_code);
+                if (response->status_code == 200 || response->status_code == 201) {
+                  ESP_LOGI("printago", "Print resumed (heat soak skipped or finished)");
+                  id(heat_soak_start_ms) = 0;
+                  id(is_warming).publish_state(false);
+                } else {
+                  ESP_LOGW("printago", "Failed to resume print");
+                }
+      else:
+      - lambda: |-
+          ESP_LOGW("printago", "Not running resume_print: printer_id, api_key, or storeid missing");
+
 - id: mark_printer_ready
   mode: queued
   then:
@@ -327,43 +421,62 @@ script:
               store = raw_store;
               return store.c_str();
           capture_response: true
-          max_response_buffer_size: 8192
+          # Full /v1/printers payloads exceed 8KB once a farm has ~6+ printers.
+          # Truncation produced invalid JSON → "No printers available" and a long web_server block.
+          max_response_buffer_size: 65536
           on_response:
             then:
             - lambda: |-
                 ESP_LOGI("printago", "Fetch printers response: %d", response->status_code);
                 if (response->status_code == 200) {
                   ESP_LOGI("printago", "Response body length: %d bytes", body.length());
+
+                  // Detect hard truncation at the HTTP buffer cap (common failure mode).
+                  const size_t kMaxBody = 65536;
+                  if (body.length() >= kMaxBody) {
+                    ESP_LOGW("printago", "Printer list response hit %d-byte buffer; list may be incomplete", (int)kMaxBody);
+                  }
+
+                  // Only keep id/name so ArduinoJson does not allocate the full printer objects.
+                  JsonDocument filter;
+                  filter[0]["id"] = true;
+                  filter[0]["name"] = true;
+                  filter[0]["metadata"]["name"] = true;
+
                   JsonDocument doc;
-                  DeserializationError error = deserializeJson(doc, body);
-                  
+                  DeserializationError error = deserializeJson(doc, body, DeserializationOption::Filter(filter));
+
                   if (!error && doc.is<JsonArray>()) {
                     JsonArray printers = doc.as<JsonArray>();
                     ESP_LOGI("printago", "Found %d printers", printers.size());
-                    
-                    // Clear the global vectors
+
                     id(printago_printer_ids).clear();
                     id(printago_printer_names).clear();
-                    
-                    // Create temporary vectors to collect and sort printers
+
                     std::vector<std::pair<std::string, std::string>> printer_pairs;
-                    
+
                     for (JsonVariant printer : printers) {
                       if (printer.is<JsonObject>()) {
                         JsonObject printerObj = printer.as<JsonObject>();
                         const char* printer_id = printerObj["id"] | "unknown";
-                        const char* name = printerObj["name"] | "unnamed";
+                        const char* name = "unnamed";
+                        if (!printerObj["name"].isNull()) {
+                          name = printerObj["name"].as<const char*>();
+                        } else if (!printerObj["metadata"].isNull() && !printerObj["metadata"]["name"].isNull()) {
+                          name = printerObj["metadata"]["name"].as<const char*>();
+                        }
+                        if (name == nullptr) {
+                          name = "unnamed";
+                        }
                         ESP_LOGI("printago", "Printer: %s (%s)", name, printer_id);
-                        
-                        // Add to temporary pairs if not "unknown"
+
                         if (strcmp(printer_id, "unknown") != 0) {
                           printer_pairs.push_back(std::make_pair(std::string(name), std::string(printer_id)));
                         }
                       }
                     }
-                    
-                    // Sort printers alphabetically by name (case-insensitive)
-                    std::sort(printer_pairs.begin(), printer_pairs.end(), 
+
+                    std::sort(printer_pairs.begin(), printer_pairs.end(),
                       [](const std::pair<std::string, std::string>& a, const std::pair<std::string, std::string>& b) {
                         std::string name_a = a.first;
                         std::string name_b = b.first;
@@ -371,40 +484,42 @@ script:
                         std::transform(name_b.begin(), name_b.end(), name_b.begin(), ::tolower);
                         return name_a < name_b;
                       });
-                    
-                    // Populate the global vectors with sorted data
+
                     for (const auto& pair : printer_pairs) {
-                      id(printago_printer_names).push_back(pair.first);   // name
-                      id(printago_printer_ids).push_back(pair.second);    // id
+                      id(printago_printer_names).push_back(pair.first);
+                      id(printago_printer_ids).push_back(pair.second);
                       ESP_LOGI("printago", "Sorted printer: %s (%s)", pair.first.c_str(), pair.second.c_str());
                     }
-                    
+
                     ESP_LOGI("printago", "Stored %d sorted printers in global vectors", id(printago_printer_ids).size());
-                    
-                    // Auto-select first printer if only one is available and none is currently selected
+
                     if (id(printago_printer_ids).size() == 1 && id(printer_id).state.empty()) {
                       std::string first_id = id(printago_printer_ids)[0];
                       std::string first_name = id(printago_printer_names)[0];
                       ESP_LOGI("printago", "Auto-selecting single printer: %s (%s)", first_name.c_str(), first_id.c_str());
                       id(printer_id).publish_state(first_id);
                     } else if (id(printago_printer_ids).size() == 0) {
-                      // Clear selection if no printers found
                       id(clear_printer_selection).execute();
                     }
-                    
-                    // Update all components immediately
+
                     id(available_printers_display).update();
                     id(printer_select).update();
                     id(update_printer_select_options).execute();
                   } else {
-                    ESP_LOGW("printago", "Failed to parse JSON response");
-                    // Show error state and update UI
-                    id(available_printers_display).publish_state("Error loading printers");
+                    if (error) {
+                      ESP_LOGW("printago", "Failed to parse JSON: %s (body=%d bytes)", error.c_str(), body.length());
+                    } else {
+                      ESP_LOGW("printago", "Failed to parse JSON response (expected array)");
+                    }
+                    if (body.length() >= kMaxBody) {
+                      id(available_printers_display).publish_state("Error: printer list too large");
+                    } else {
+                      id(available_printers_display).publish_state("Error loading printers");
+                    }
                     id(printer_select).update();
                   }
                 } else {
                   ESP_LOGW("printago", "HTTP error %d", response->status_code);
-                  // Show error state and update UI
                   id(available_printers_display).publish_state("Error: HTTP " + std::to_string(response->status_code));
                   id(printer_select).update();
                 }
@@ -674,6 +789,68 @@ text:
             }
           }
           id(is_downloading).publish_state(download_state);
+
+          // Heat soak / warming: early-print pause from M400 U1 in machine start G-code.
+          // Timer uses heat_soak_start_ms so WiFi drops don't reset the 15-minute countdown.
+          bool warming_state = false;
+          bool have_state = !root["state"].isNull();
+          if (have_state && !download_state && !(bool)root["isAvailable"]) {
+            int layer = 0;
+            int percent = 0;
+            const char* stage = nullptr;
+            const char* activity = nullptr;
+            if (!root["data"].isNull()) {
+              JsonObject data = root["data"];
+              if (!data["print"].isNull()) {
+                JsonObject print = data["print"];
+                if (!print["currentLayer"].isNull()) {
+                  layer = (int)print["currentLayer"];
+                }
+                if (!print["percent"].isNull()) {
+                  percent = (int)print["percent"];
+                }
+                if (!print["stage"].isNull()) {
+                  stage = print["stage"];
+                }
+                if (!print["activity"].isNull()) {
+                  activity = print["activity"];
+                }
+              }
+            }
+
+            bool early_print = (layer <= 0) && (percent <= 1);
+            bool paused = false;
+            const char* state = root["state"];
+            if (state != nullptr) {
+              paused = (strcasecmp(state, "PAUSE") == 0) ||
+                       (strcasecmp(state, "paused") == 0) ||
+                       (strcasecmp(state, "pause") == 0);
+            }
+
+            auto mentions_m400 = [](const char* value) -> bool {
+              if (value == nullptr) return false;
+              std::string s(value);
+              for (char &c : s) c = (char)tolower((unsigned char)c);
+              return s.find("m400") != std::string::npos;
+            };
+
+            warming_state = early_print && (paused || mentions_m400(stage) || mentions_m400(activity));
+          }
+
+          // Only update warming + timer from messages that include state (ignore sparse updates).
+          // While warming: set start once. While not: clear start. WiFi silence leaves both unchanged.
+          if (have_state) {
+            if (warming_state) {
+              if (id(heat_soak_start_ms) == 0) {
+                id(heat_soak_start_ms) = millis();
+                ESP_LOGI("printago", "Heat soak timer started (15 min from now, survives WiFi drops)");
+              }
+            } else if (id(heat_soak_start_ms) != 0) {
+              id(heat_soak_start_ms) = 0;
+              ESP_LOGI("printago", "Heat soak timer cleared (no longer warming)");
+            }
+            id(is_warming).publish_state(warming_state);
+          }
         });
 
         // Subscribe to entities topic for confirmedReady
@@ -840,3 +1017,28 @@ globals:
 - id: printago_printer_names
   type: std::vector<std::string>
   restore_value: false
+
+# millis() when heat soak (M400 U1) was first observed. 0 = not timing.
+# Survives WiFi/MQTT drops; only cleared when soak ends or is skipped.
+- id: heat_soak_start_ms
+  type: uint32_t
+  restore_value: false
+  initial_value: '0'
+
+# Poll local countdown; resume when 15 min elapsed and still warming.
+# If WiFi is down at expiry, retries every 5s until resume succeeds.
+interval:
+- interval: 5s
+  then:
+  - if:
+      condition:
+        and:
+        - lambda: |-
+            return id(heat_soak_start_ms) != 0 &&
+                   (millis() - id(heat_soak_start_ms)) >= 900000UL;
+        - lambda: 'return id(is_warming).state;'
+        - lambda: 'return id(mqtt_client_id)->is_connected();'
+      then:
+      - lambda: |-
+          ESP_LOGI("printago", "Heat soak auto-resume: 15 min elapsed");
+      - script.execute: resume_print

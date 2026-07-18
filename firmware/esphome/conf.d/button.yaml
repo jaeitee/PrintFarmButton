@@ -14,4 +14,4 @@ binary_sensor:
   - delayed_off: 100ms
   on_press:
     then:
-    - script.execute: mark_printer_ready
+    - script.execute: handle_button_press
