@@ -10,8 +10,6 @@ This was a buffer overload issue due to the response size being larger than 8kb,
 2) Warming / Heat Soak function for materials other than PLA/TPU.
 In the PrintFarmButton GUI you can now set a heat soak time, default is 15 minutes.
 
-This fork of the proejct exists only for me to test features within my own farm, which may or may not work.  
-
 ### Printago States:  
 🟦 - Idle  
 🟨 - Downloading / Starting   
