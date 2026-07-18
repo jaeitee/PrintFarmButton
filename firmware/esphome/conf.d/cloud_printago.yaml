@@ -895,7 +895,7 @@ text:
           id(is_downloading).publish_state(download_state);
 
           // Heat soak / warming: early-print pause from M400 U1 in machine start G-code.
-          // Timer uses heat_soak_start_ms so WiFi drops don't reset the 15-minute countdown.
+          // Timer uses heat_soak_start_ms so WiFi drops don't reset the heat-soak countdown.
           bool warming_state = false;
           bool have_state = !root["state"].isNull();
           if (have_state && !download_state && !(bool)root["isAvailable"]) {
@@ -947,7 +947,9 @@ text:
             if (warming_state) {
               if (id(heat_soak_start_ms) == 0) {
                 id(heat_soak_start_ms) = millis();
-                ESP_LOGI("printago", "Heat soak timer started (15 min from now, survives WiFi drops)");
+                uint32_t mins = (uint32_t)id(heat_soak_minutes).state;
+                if (mins < 1) mins = 15;
+                ESP_LOGI("printago", "Heat soak timer started (%u min from now, survives WiFi drops)", mins);
               }
             } else if (id(heat_soak_start_ms) != 0) {
               id(heat_soak_start_ms) = 0;
@@ -1051,46 +1053,22 @@ select:
         }
 
         ESP_LOGW("printago", "Unhandled selection: %s", x.c_str());
-# number:
-# - platform: template
-#   name: "Select Printer by Index"
-#   id: printer_select_number
-#   icon: "mdi:printer-search"
-#   internal: true
-#   min_value: 1
-#   max_value: 10
-#   step: 1
-#   mode: box
-#   lambda: |-
-#     // Return current selection index (1-based)
-#     auto& ids = id(printago_printer_ids);
-#     if (ids.empty()) {
-#       return 0.0;
-#     }
 
-#     // Find current printer_id in the vector and return its 1-based index
-#     std::string current_id = id(printer_id).state;
-#     for (size_t i = 0; i < ids.size(); i++) {
-#       if (ids[i] == current_id) {
-#         return (float)(i + 1);
-#       }
-#     }
-
-#     return 1.0; // Default to first printer if not found
-#   set_action:
-#     then:
-#     - lambda: |-
-#         auto& ids = id(printago_printer_ids);
-#         int index = (int)x - 1; // Convert to 0-based index
-
-#         if (index >= 0 && index < ids.size()) {
-#           std::string selected_id = ids[index];
-#           ESP_LOGI("printago", "Printer selected by index %d: %s", index + 1, selected_id.c_str());
-#           // Update the printer_id text field with the selected value
-#           id(printer_id).publish_state(selected_id);
-#         } else {
-#           ESP_LOGW("printago", "Invalid printer index: %d", index + 1);
-#         }
+number:
+- platform: template
+  name: "Heat soak (minutes)"
+  id: heat_soak_minutes
+  icon: "mdi:timer-sand"
+  min_value: 1
+  max_value: 60
+  step: 1
+  mode: slider
+  restore_value: true
+  optimistic: true
+  initial_value: 15
+  web_server:
+    sorting_group_id: printago
+    sorting_weight: 12
 
 button:
 - platform: template
@@ -1140,7 +1118,7 @@ globals:
   restore_value: false
   initial_value: '0'
 
-# Poll local countdown; resume when 15 min elapsed and still warming.
+# Poll local countdown; resume when configured heat-soak minutes elapsed and still warming.
 # If WiFi is down at expiry, retries every 5s until resume succeeds.
 interval:
 - interval: 5s
@@ -1149,12 +1127,16 @@ interval:
       condition:
         and:
         - lambda: |-
+            uint32_t mins = (uint32_t)id(heat_soak_minutes).state;
+            if (mins < 1) mins = 15;
             return id(heat_soak_start_ms) != 0 &&
-                   (millis() - id(heat_soak_start_ms)) >= 900000UL;
+                   (millis() - id(heat_soak_start_ms)) >= (mins * 60000UL);
         - lambda: 'return id(is_warming).state;'
         - lambda: 'return id(mqtt_client_id)->is_connected();'
       then:
       - lambda: |-
-          ESP_LOGI("printago", "Heat soak auto-resume: 15 min elapsed");
+          uint32_t mins = (uint32_t)id(heat_soak_minutes).state;
+          if (mins < 1) mins = 15;
+          ESP_LOGI("printago", "Heat soak auto-resume: %u min elapsed", mins);
           id(resume_http_retries) = 0;
       - script.execute: resume_print

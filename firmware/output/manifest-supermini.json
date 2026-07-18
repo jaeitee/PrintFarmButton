@@ -20,7 +20,7 @@
       "chipFamily": "ESP32-C3",
       "ota": {
         "path": "printfarmbutton-supermini-esp32c3.ota.bin",
-        "md5": "ef85d87cf4686bc3a0b4874d0b5b1092"
+        "md5": "f75ac10b69ba54a1ea1736b5c76a132e"
       },
       "parts": [
         {
