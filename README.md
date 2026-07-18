@@ -48,9 +48,5 @@ M400 U1 ; heat soak — resume to continue
 3. **Tap** the button to skip the soak and continue the print, **or** wait for **Heat soak (minutes)** and the button auto-sends Resume
 4. Print continues → button shows 🟩 green
 
-Flash firmware that includes the warming / resume feature for skip + auto-resume to work.
-
-**Notes**
-
-- Button tap (resume / mark ready) needs HTTPS to `api.printago.io`. MQTT alone can update the LED but cannot send commands.
-- Printago **virtual printers** do not reliably simulate `M400 U1` pauses — test heat soak on a real Bambu.
+**Flashing Firmware**
+Open the flash.html file in your browser and follow the onscreen options/instructions.
