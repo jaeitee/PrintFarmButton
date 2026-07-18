@@ -20,6 +20,8 @@ This was a buffer overload issue due to the response size being larger than 8kb,
 
 ### Heat soak (machine start G-code)
 
+![Heat-Soak](images/heat_soak.png)
+
 Add this to your **printer machine start G-code** (Bambu Studio / Orca → Printer settings → Machine start G-code), after the bed reaches temperature.
 
 Use `M400 U1` (wait for Resume), **not** `M400 S900` (timed dwell). Only a Resume pause can be skipped from the farm button.
