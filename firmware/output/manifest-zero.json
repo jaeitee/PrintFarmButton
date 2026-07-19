@@ -1,12 +1,12 @@
 {
   "name": "PrintFarmButton Zero",
-  "version": "1.0.8-persist-printer",
+  "version": "1.0.13",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "ota": {
         "path": "printfarmbutton-zero-esp32s3.ota.bin",
-        "md5": "f3fa0f54c6f5bac30b18cc711642181e"
+        "md5": "d752f473112f7d9fb140c6a8fb5fda0f"
       },
       "parts": [
         {
@@ -20,7 +20,7 @@
       "chipFamily": "ESP32-C3",
       "ota": {
         "path": "printfarmbutton-zero-esp32c3.ota.bin",
-        "md5": "234361f9737031510756cfee6fb330f1"
+        "md5": "6a50366fd5d0dce48d9ce284df820051"
       },
       "parts": [
         {
