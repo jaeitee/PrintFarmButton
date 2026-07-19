@@ -8,6 +8,7 @@ wifi:
   on_connect:
     then:
     - logger.log: "WiFi Connected!"
+    - lambda: 'pfb_update_alias(id(printer_name).state);'
     - if:
         condition:
           lambda: 'return id(cloud_connection).state == "Printago";'
@@ -35,6 +36,7 @@ wifi:
   on_disconnect:
     then:
     - logger.log: "WiFi Disconnected! Starting fallback hotspot."
+    - lambda: 'pfb_clear_alias();'
     - light.turn_off:
         id: printfarmbutton_rgb
     # TODO: Set different light pattern when in hotspot mode

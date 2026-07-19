@@ -2,6 +2,8 @@ esphome:
   name: printfarmbutton
   friendly_name: PrintFarmButton
   name_add_mac_suffix: true
+  includes:
+  - conf.d/pfb_mdns.h
   project:
     name: spuder.printfarmbutton
     version: ${version}

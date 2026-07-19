@@ -631,6 +631,9 @@ text_sensor:
   web_server:
     sorting_group_id: printago
     sorting_weight: 8
+  on_value:
+    then:
+    - lambda: 'pfb_update_alias(x);'
 
 - platform: template
   name: "MQTT Client ID"
