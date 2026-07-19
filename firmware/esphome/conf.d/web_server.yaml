@@ -1,8 +1,21 @@
+web_server_base:
+  id: pfb_web_base
+
 web_server:
+  id: pfb_web
   port: 80
   version: 3
   include_internal: false
+  # Patch OTA file picker so macOS can select .bin (CDN UI uses accept=octet-stream only)
+  js_include: conf.d/web_ota_accept_fix.js
+  auth:
+    username: admin
+    # Compile-time placeholder; overwritten at boot from NVS or pfb-<mac_suffix>
+    password: "PLACEHOLDER"
   sorting_groups:
+  - id: security
+    name: Security
+    sorting_weight: 0
   - id: cloud
     name: Cloud
     sorting_weight: 1

@@ -1,0 +1,62 @@
+text:
+- platform: template
+  name: "Web UI Password"
+  id: web_ui_password_text
+  mode: password
+  restore_value: true
+  optimistic: true
+  state_topic:
+  web_server:
+    sorting_group_id: security
+    sorting_weight: 0
+  icon: "mdi:lock"
+  on_value:
+    then:
+    - lambda: |-
+        std::string p = x;
+        if (p.empty()) {
+          std::string mac = get_mac_address();
+          mac.erase(std::remove(mac.begin(), mac.end(), ':'), mac.end());
+          std::string suffix = mac.length() >= 6 ? mac.substr(mac.length() - 6) : mac;
+          p = "pfb-" + suffix;
+        }
+        id(pfb_web_base).set_auth_password(p.c_str());
+        if (id(reveal_web_ui_password).state) {
+          id(web_ui_password_revealed).publish_state(p);
+        }
+
+switch:
+- platform: template
+  name: "Reveal Web UI Password"
+  id: reveal_web_ui_password
+  optimistic: true
+  restore_mode: RESTORE_DEFAULT_OFF
+  icon: "mdi:eye"
+  state_topic:
+  web_server:
+    sorting_group_id: security
+    sorting_weight: 1
+  turn_on_action:
+    - lambda: |-
+        std::string p = id(web_ui_password_text).state;
+        if (p.empty()) {
+          std::string mac = get_mac_address();
+          mac.erase(std::remove(mac.begin(), mac.end(), ':'), mac.end());
+          std::string suffix = mac.length() >= 6 ? mac.substr(mac.length() - 6) : mac;
+          p = "pfb-" + suffix;
+        }
+        id(web_ui_password_revealed).publish_state(p);
+  turn_off_action:
+    - lambda: |-
+        id(web_ui_password_revealed).publish_state("");
+
+text_sensor:
+- platform: template
+  name: "Web UI Password (revealed)"
+  id: web_ui_password_revealed
+  icon: "mdi:form-textbox-password"
+  state_topic:
+  web_server:
+    sorting_group_id: security
+    sorting_weight: 2
+  update_interval: never

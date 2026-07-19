@@ -20,6 +20,17 @@ esphome:
         ESP_LOGI("version", "Set installed version to: ${version}");
         // Ensure MQTT username/password/client_id match restored Store ID + API key
         id(mqtt_client_id_stored).update();
+        // Seed web UI auth from stored password, or device-derived default
+        std::string p = id(web_ui_password_text).state;
+        if (p.empty()) {
+          std::string mac = get_mac_address();
+          mac.erase(std::remove(mac.begin(), mac.end(), ':'), mac.end());
+          std::string suffix = mac.length() >= 6 ? mac.substr(mac.length() - 6) : mac;
+          p = "pfb-" + suffix;
+        }
+        id(pfb_web_base).set_auth_username("admin");
+        id(pfb_web_base).set_auth_password(p.c_str());
+        ESP_LOGI("web_auth", "Web UI auth seeded for user admin");
     - if:
         condition:
           lambda: 'return id(cloud_connection).state == "Printago";'
@@ -29,6 +40,7 @@ esphome:
 packages:
   led: !include conf.d/led.yaml
   web_server: !include conf.d/web_server.yaml
+  web_auth: !include conf.d/web_auth.yaml
   cloud: !include conf.d/cloud.yaml
   cloud_printago: !include conf.d/cloud_printago.yaml
   mqtt: !include conf.d/mqtt.yaml
