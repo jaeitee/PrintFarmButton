@@ -5,15 +5,15 @@ If you are looking to deloy to your farm visit his project directly: https://git
 ![PrintFarmButton](images/button_blue.png)
 
 Main Differences:
-1) Warming / Heat Soak function for materials other than PLA/TPU.
-In the PrintFarmButton GUI you can now set a heat soak time, default is 15 minutes.
-2) GUI Hanging/Freezeing with 5+ Printers.  
-This was a buffer overload issue due to the response size being larger than 8kb, fixed.
-3) Friendly URLs — open the button as `<printer>-pfb.local` instead of only the MAC hostname.
-It was requiring a spreadsheet to keep track, this now simplifies managing your button as the name is bound to your printer's name.
-4) Web UI login — password-protected GUI with a known device default password.
-The deafault user/pass structure is explained below, how to know your password and then update it in the GUI.
-5) Wifi Diagnostics added to GUI
+**1)** Warming / Heat Soak function for materials other than PLA/TPU.<br />
+In the PrintFarmButton GUI you can now set a heat soak time, default is 15 minutes.<br />
+**2)** GUI Hanging/Freezeing with 5+ Printers.  <br />
+This was a buffer overload issue due to the response size being larger than 8kb, fixed.<br />
+**3)** Friendly URLs — open the button as `<printer>-pfb.local` instead of only the MAC hostname.<br />
+It was requiring a spreadsheet to keep track, this now simplifies managing your button as the name is bound to your printer's name.<br />
+**4)** Web UI login — password-protected GUI with a known device default password.<br />
+The deafault user/pass structure is explained below, how to know your password and then update it in the GUI.<br />
+**5)** Wifi Diagnostics added to GUI<br />
 Signal strength in both an indicator ▂▄▆█ and dBm displayed, along with WiFi Channel and Band.
 
 ### Printago States:  
