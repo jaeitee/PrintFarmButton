@@ -4,7 +4,7 @@ If you are looking to deloy to your farm visit his project directly: https://git
 
 ![PrintFarmButton](images/button_blue.png)
 
-Main Differences:
+### Main Differences: ###
 **1)** Warming / Heat Soak function for materials other than PLA/TPU.<br />
 In the PrintFarmButton GUI you can now set a heat soak time, default is 15 minutes.<br />
 **2)** GUI Hanging/Freezeing with 5+ Printers.  <br />
