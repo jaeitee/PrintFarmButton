@@ -41,3 +41,79 @@ wifi:
         id: printfarmbutton_rgb
     # TODO: Set different light pattern when in hotspot mode
 captive_portal:
+
+sensor:
+- platform: wifi_signal
+  name: "WiFi Signal (dBm)"
+  id: wifi_signal_dbm
+  update_interval: 60s
+  entity_category: diagnostic
+  icon: "mdi:wifi"
+  web_server:
+    sorting_group_id: diagnostics
+    sorting_weight: 2
+
+- platform: template
+  name: "WiFi Channel"
+  id: wifi_channel
+  update_interval: 60s
+  accuracy_decimals: 0
+  entity_category: diagnostic
+  icon: "mdi:access-point"
+  web_server:
+    sorting_group_id: diagnostics
+    sorting_weight: 3
+  lambda: |-
+    int32_t ch = wifi::global_wifi_component->get_wifi_channel();
+    if (ch <= 0) {
+      return {};
+    }
+    return (float) ch;
+
+text_sensor:
+- platform: template
+  name: "WiFi Signal"
+  id: wifi_signal_bars
+  update_interval: 60s
+  entity_category: diagnostic
+  icon: "mdi:wifi"
+  web_server:
+    sorting_group_id: diagnostics
+    sorting_weight: 1
+  lambda: |-
+    float rssi = id(wifi_signal_dbm).state;
+    if (std::isnan(rssi)) {
+      return {"▁▁▁▁"};
+    }
+    if (rssi >= -55) {
+      return {"▂▄▆█"};
+    }
+    if (rssi >= -65) {
+      return {"▂▄▆▁"};
+    }
+    if (rssi >= -75) {
+      return {"▂▄▁▁"};
+    }
+    if (rssi >= -85) {
+      return {"▂▁▁▁"};
+    }
+    return {"▁▁▁▁"};
+
+- platform: template
+  name: "WiFi Band"
+  id: wifi_band
+  update_interval: 60s
+  entity_category: diagnostic
+  icon: "mdi:radio-tower"
+  web_server:
+    sorting_group_id: diagnostics
+    sorting_weight: 4
+  lambda: |-
+    int32_t ch = wifi::global_wifi_component->get_wifi_channel();
+    if (ch <= 0) {
+      return {};
+    }
+    if (ch <= 14) {
+      return {"2.4 GHz"};
+    }
+    return {"5 GHz"};

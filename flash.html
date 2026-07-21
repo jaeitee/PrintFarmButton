@@ -101,7 +101,7 @@
         </div>
       </div>
     </div>
-    <esp-web-install-button id="esp-flash" manifest="hardware/output/manifest-zero.json"></esp-web-install-button>
+    <esp-web-install-button id="esp-flash"></esp-web-install-button>
   </div>
   <div class="donate-box" style="margin:2em auto 0 auto; max-width:500px; background:#f8fafd; border-radius:10px; box-shadow:0 2px 8px #0001; padding:1.5em; text-align:center;">
     <div style="font-size:1.15em; color:#1976d2; font-weight:bold; margin-bottom:0.5em;">Want to support the project?</div>
@@ -117,18 +117,65 @@
     <script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="openspool" data-color="#FFDD00" data-emoji="☕" data-font="Cookie" data-text="Buy me a coffee" data-outline-color="#000000" data-font-color="#000000" data-coffee-color="#ffffff"></script>
   </div>
   <script>
-    // Map board value to manifest file (using raw GitHub URLs)
+    // Always load manifests from this fork's main branch. The cache-busting
+    // query ensures a newly published firmware manifest is fetched each time.
+    const firmwareBaseUrl = 'https://raw.githubusercontent.com/jaeitee/PrintFarmButton/refs/heads/main/firmware/output/';
+    const cacheBust = `?t=${Date.now()}`;
     const manifestMap = {
-      'esp32s3-zero': 'https://raw.githubusercontent.com/spuder/PrintFarmButton/main/firmware/output/manifest-zero.json',
-      'esp32s3-supermini': 'https://raw.githubusercontent.com/spuder/PrintFarmButton/main/firmware/output/manifest-supermini.json',
-      'esp32c3-zero': 'https://raw.githubusercontent.com/spuder/PrintFarmButton/main/firmware/output/manifest-zero.json',
-      'esp32c3-supermini': 'https://raw.githubusercontent.com/spuder/PrintFarmButton/main/firmware/output/manifest-supermini.json',
-      'atom-matrix': 'https://raw.githubusercontent.com/spuder/PrintFarmButton/main/firmware/output/manifest-atom-matrix.json',
+      'esp32s3-zero': `${firmwareBaseUrl}manifest-zero.json${cacheBust}`,
+      'esp32s3-supermini': `${firmwareBaseUrl}manifest-supermini.json${cacheBust}`,
+      'esp32c3-zero': `${firmwareBaseUrl}manifest-zero.json${cacheBust}`,
+      'esp32c3-supermini': `${firmwareBaseUrl}manifest-supermini.json${cacheBust}`,
+      'atom-matrix': `${firmwareBaseUrl}manifest-atom-matrix.json${cacheBust}`,
     };
     const flashBtn = document.getElementById('esp-flash');
     // Select all board options, including kit
     const boardOptions = document.querySelectorAll('.board-option');
     let selectedBoard = 'esp32s3-zero';
+    let manifestRequest = 0;
+    let generatedManifestUrl;
+
+    async function loadVersionedManifest(board) {
+      const request = ++manifestRequest;
+      const sourceUrl = manifestMap[board];
+
+      try {
+        const response = await fetch(sourceUrl, { cache: 'no-store' });
+        if (!response.ok) {
+          throw new Error(`Manifest request failed with status ${response.status}`);
+        }
+
+        const manifest = await response.json();
+        if (manifest.version && !manifest.name.includes(manifest.version)) {
+          manifest.name = `${manifest.name} v${manifest.version}`;
+        }
+
+        // Blob manifests need absolute firmware URLs because relative paths
+        // would otherwise resolve against the temporary blob URL.
+        manifest.builds.forEach(build => {
+          build.parts?.forEach(part => {
+            part.path = new URL(part.path, sourceUrl).href;
+          });
+          if (build.ota?.path) {
+            build.ota.path = new URL(build.ota.path, sourceUrl).href;
+          }
+        });
+
+        if (request !== manifestRequest) return;
+
+        const nextUrl = URL.createObjectURL(
+          new Blob([JSON.stringify(manifest)], { type: 'application/json' })
+        );
+        flashBtn.setAttribute('manifest', nextUrl);
+        if (generatedManifestUrl) URL.revokeObjectURL(generatedManifestUrl);
+        generatedManifestUrl = nextUrl;
+      } catch (error) {
+        if (request !== manifestRequest) return;
+        console.error('Could not prepare versioned firmware manifest:', error);
+        flashBtn.setAttribute('manifest', sourceUrl);
+      }
+    }
+
     function updateSelection(board) {
       selectedBoard = board;
       boardOptions.forEach(opt => {
@@ -140,7 +187,7 @@
           opt.style.background = '#fafafa';
         }
       });
-      flashBtn.setAttribute('manifest', manifestMap[board]);
+      loadVersionedManifest(board);
     }
     boardOptions.forEach(opt => {
       opt.addEventListener('click', () => updateSelection(opt.getAttribute('data-board')));

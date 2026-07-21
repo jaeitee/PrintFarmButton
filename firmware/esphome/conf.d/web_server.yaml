@@ -28,6 +28,6 @@ web_server:
   - id: updates
     name: Updates
     sorting_weight: 4
-  # - id: diagnostics
-  #   name: Diagnostics
-  #   sorting_weight: 5
+  - id: diagnostics
+    name: Diagnostics
+    sorting_weight: 5

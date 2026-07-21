@@ -1,12 +1,12 @@
 {
-  "name": "PrintFarmButton ATOM Matrix",
-  "version": "1.0.13",
+  "name": "PrintFarmButton ATOM Matrix v1.0.14",
+  "version": "1.0.14",
   "builds": [
     {
       "chipFamily": "ESP32",
       "ota": {
         "path": "printfarmbutton-atom-matrix-esp32.ota.bin",
-        "md5": "b205456eeb12a4892ef9376b35dc3955"
+        "md5": "c96c725de5cda75a66392b3663fdc67e"
       },
       "parts": [
         {

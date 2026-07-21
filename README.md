@@ -13,6 +13,8 @@ This was a buffer overload issue due to the response size being larger than 8kb,
 It was requiring a spreadsheet to keep track, this now simplifies managing your button as the name is bound to your printer's name.
 4) Web UI login — password-protected GUI with a known device default password.
 The deafault user/pass structure is explained below, how to know your password and then update it in the GUI.
+5) Wifi Diagnostics added to GUI
+Signal strength in both an indicator ▂▄▆█ and dBm displayed, along with WiFi Channel and Band.
 
 ### Printago States:  
 🟦 - Idle  

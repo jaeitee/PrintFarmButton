@@ -1,12 +1,12 @@
 {
-  "name": "PrintFarmButton SuperMini",
-  "version": "1.0.13",
+  "name": "PrintFarmButton SuperMini v1.0.14",
+  "version": "1.0.14",
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "ota": {
         "path": "printfarmbutton-supermini-esp32s3.ota.bin",
-        "md5": "0888571c8b10e9ca3d7d600ccfcd3a48"
+        "md5": "a59f09b9f8e92a0de82ddd8299127378"
       },
       "parts": [
         {
@@ -20,7 +20,7 @@
       "chipFamily": "ESP32-C3",
       "ota": {
         "path": "printfarmbutton-supermini-esp32c3.ota.bin",
-        "md5": "ef6d0c5d5ec7e5ef387c9bd4a6cf8b3c"
+        "md5": "bcbc93bcc6e95a8d31567b0348fbf4f8"
       },
       "parts": [
         {

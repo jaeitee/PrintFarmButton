@@ -532,21 +532,21 @@ jobs:
         run: |
           # Create separate manifests for OTA updates
           jq -n --arg version "$VERSION" '{
-            name: "PrintFarmButton SuperMini",
+            name: ("PrintFarmButton SuperMini v" + $version),
             version: $version,
             builds: [],
             new_install_prompt_erase: true
           }' > firmware/output/manifest-supermini.json
 
           jq -n --arg version "$VERSION" '{
-            name: "PrintFarmButton Zero",
+            name: ("PrintFarmButton Zero v" + $version),
             version: $version,
             builds: [],
             new_install_prompt_erase: true
           }' > firmware/output/manifest-zero.json
 
           jq -n --arg version "$VERSION" '{
-            name: "PrintFarmButton ATOM Matrix",
+            name: ("PrintFarmButton ATOM Matrix v" + $version),
             version: $version,
             builds: [],
             new_install_prompt_erase: true
