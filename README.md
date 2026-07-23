@@ -38,26 +38,18 @@ PLA and TPU skip the pause; all other filaments (PETG, ABS, ASA, PC, etc.) heat-
 
 **Find**
 ```gcode
-;===== wipe nozzle end ================================
-
-;===== bed leveling ==================================
+M190 S[bed_temperature_initial_layer_single] ; wait for bed temp
 ```
-**Add Between**
+**Add Below**
 ```gcode
-;===== wipe nozzle end ================================
-
 ;===== Jaeitee PrintFarmButton Bed Heat Soak =====
 ; M400 U1 = wait for Resume (button tap, Printago, or printer UI).
 ; PrintFarmButton shows orange, auto-resumes after Heat soak (minutes), or skip early with a tap.
 {if filament_type[initial_extruder]!="PLA" && filament_type[initial_extruder]!="TPU"}
 M140 S[bed_temperature_initial_layer_single] ; hold bed at initial-layer temp
-M104 S140 ; keep nozzle cool during soak
 M400 U1 ; heat soak — resume to continue
-M104 S{nozzle_temperature_initial_layer[initial_extruder]}
 {endif}
 ;===== Jaeitee PrintFarmButton Bed Heat Soak =====
-
-;===== bed leveling ==================================
 ```
 
 **How it works with the button**

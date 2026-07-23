@@ -43,14 +43,14 @@ Virtual printers do not reliably pause on `M400 U1`; validate on a real Bambu.
 ```gcode
 M190 S[bed_temperature_initial_layer_single] ; wait for bed temp
 
-;===== Bed heat soak (start of print only) =====
+;===== Jaeitee PrintFarmButton Bed Heat Soak =====
 ; M400 U1 = wait for Resume (button tap, Printago, or printer UI).
 ; PrintFarmButton shows orange, auto-resumes after Heat soak (minutes), or skip early with a tap.
 {if filament_type[initial_extruder]!="PLA" && filament_type[initial_extruder]!="TPU"}
 M140 S[bed_temperature_initial_layer_single] ; hold bed at initial-layer temp
 M400 U1 ; heat soak — resume to continue
 {endif}
-;===== Bed heat soak end =====
+;===== Jaeitee PrintFarmButton Bed Heat Soak =====
 ```
 
 Button actions (resume, confirm-ready) require HTTPS to `api.printago.io`. MQTT updates LEDs only.
