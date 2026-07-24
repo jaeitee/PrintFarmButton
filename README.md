@@ -14,12 +14,15 @@ It was requiring a spreadsheet to keep track, this now simplifies managing your 
 **4)** Web UI login — password-protected GUI with a known device default password.<br />
 The deafault user/pass structure is explained below, how to know your password and then update it in the GUI.<br />
 **5)** Wifi Diagnostics added to GUI<br />
-Signal strength in both an indicator ▂▄▆█ and dBm displayed, along with WiFi Channel and Band.
+Signal strength in both an indicator ▂▄▆█ and dBm displayed, along with WiFi Channel and Band.<br />
+**6)** Post-print cool-down for heat-soaked jobs.<br />
+When a print that heat-soaked finishes, the button holds a cool-down state (purple/white pulse) before showing purple. Set the max time and an optional bed/chamber temperature threshold in the GUI.
 
 ### Printago States:  
 🟦 - Idle  
-🟨 - Downloading / Starting   
+🟦 ⬜ - Downloading / Starting (blue/white pulse)  
 🟧 - Warming / heat soak (tap to skip)  
+🟪 ⬜ - Cool-down (purple/white pulse) — heat-soaked print finished, waiting to cool  
 🟪 - Finished / Waiting for bed clear  
 🟩 - Printing  
 🟥 - Error
@@ -58,6 +61,26 @@ M400 U1 ; heat soak — resume to continue
 2. Button shows 🟧 orange (warming)
 3. **Tap** the button to skip the soak and continue the print, **or** wait for **Heat soak (minutes)** and the button auto-sends Resume
 4. Print continues → button shows 🟩 green
+
+### Cool-down (after print)
+
+When a print that **heat-soaked** finishes, the button enters a **cool-down** state instead of going straight to purple. The LED pulses at the same cadence as the finished-purple state, but alternates **purple → white → purple → white**. This is a local, advisory state only — you can still tap the button to mark the bed clear at any time.
+
+Configure it in the web UI (Printago group):
+
+- **Cool-down (minutes)** — maximum wait before the button shows purple (default 60).
+- **Cool-down temp (°C)** — temperature threshold for ending cool-down early (default 45).
+- **Cool-down: wait for bed temp** — end cool-down once the bed is at/below the threshold.
+- **Cool-down: wait for chamber temp** — end cool-down once the chamber is at/below the threshold.
+
+Cool-down ends when **either** the max time elapses **or** the selected temperature gate is satisfied (whichever comes first):
+
+- If only **bed** is checked → wait for bed temp.
+- If only **chamber** is checked → wait for chamber temp.
+- If **both** are checked → both must be at/below the threshold.
+- If the printer does not report a chamber temperature, the chamber selection is ignored.
+
+Temperatures come from Printago's live MQTT telemetry (no extra polling). Only jobs that heat-soaked (non-PLA/TPU) trigger cool-down; PLA/TPU prints go straight to purple.
 
 ### Friendly URLs
 

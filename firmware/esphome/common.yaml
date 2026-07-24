@@ -1,3 +1,8 @@
+# Appended to the reported version. Empty for release builds; override at compile time
+# for local test firmware, e.g. `-s version_suffix "-testing"` (see printfarmbutton.md).
+substitutions:
+  version_suffix: ""
+
 esphome:
   name: printfarmbutton
   friendly_name: PrintFarmButton
@@ -6,7 +11,7 @@ esphome:
   - conf.d/pfb_mdns.h
   project:
     name: spuder.printfarmbutton
-    version: ${version}
+    version: ${version}${version_suffix}
   min_version: 2025.7.0
   on_boot:
     then:
@@ -16,8 +21,8 @@ esphome:
     - delay: 3s
     - lambda: |-
         // Set version once at boot
-        id(printfarmbutton_version).publish_state("${version}");
-        ESP_LOGI("version", "Set installed version to: ${version}");
+        id(printfarmbutton_version).publish_state("${version}${version_suffix}");
+        ESP_LOGI("version", "Set installed version to: ${version}${version_suffix}");
         // Ensure MQTT username/password/client_id match restored Store ID + API key
         id(mqtt_client_id_stored).update();
         // Seed web UI auth from stored password, or device-derived default

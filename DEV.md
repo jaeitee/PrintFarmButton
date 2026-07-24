@@ -11,7 +11,7 @@ isOnline: true
 confirmedReady: false
 isAvailable: true
 
-# Yellow (Downloading / Starting)
+# Downloading / Starting (blue breathing to white — DownloadPulse effect)
 state: PREPARE
 
 # Orange (Warming / heat soak)
@@ -27,9 +27,33 @@ isOnline: true
 isAvailable: false
 confirmedReady: false
 
+# Purple/white pulse (Cool-down)
+Local-only state after a heat-soaked job finishes; delays the purple "waiting for bed clear" LED.
+Trigger: finish edge (isAvailable false -> true) + confirmedReady false + job_had_heat_soak.
+job_had_heat_soak is set when is_warming was observed this job; cleared on new job (PREPARE),
+cool-down end, bed clear (confirm-ready), or clear_printago_status.
+LED: CoolDownPulse effect (alternates purple/white at the Pulse cadence). No API call involved.
+Ends when EITHER cool_down_start_ms elapsed >= Cool-down (minutes) (web UI, default 60)
+OR the selected temp gate is satisfied (see Cool-down temps). WiFi drops do not reset the countdown.
+
 # Red (error)
 health.errors present (excluding user-pause HMS codes above) / health.warnings present
 ```
+
+# Cool-down temps
+
+Bed/chamber temps come from MQTT `printer-stats` `data.temps.bedTemp` / `data.temps.chamberTemp`
+(cached to last_bed_temp / last_chamber_temp; -1000 = unknown). No extra HTTP polling.
+chamber_temp_known is true only when the latest message included a chamber temp.
+
+Temp gate (threshold = `Cool-down temp (°C)`, web UI default 45):
+- Wait for bed only        → bed <= threshold
+- Wait for chamber only     → chamber <= threshold (ignored if chamber not reported → time-only)
+- Wait for bed + chamber    → both <= threshold (chamber ignored if not reported → bed only)
+- Neither                   → time-only
+Unknown bed temp while bed wait is required is NOT satisfied (time still caps cool-down).
+Cool-down end is local (no API), so it is not gated on MQTT connectivity; the max-time cap fires even offline.
+evaluate_cool_down runs on the 5s interval and on every stats message (so fresh temps end it promptly).
 
 # Heat soak (machine start G-code)
 

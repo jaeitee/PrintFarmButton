@@ -22,6 +22,42 @@ light:
       max_brightness: 100%
       min_brightness: 50%
       update_interval: 0.3s
+  # Downloading / starting: gentle breathing between blue (idle) and white and back.
+  # Distinct from the orange warmup so the two are never confused.
+  - addressable_lambda:
+      name: DownloadPulse
+      update_interval: 16ms
+      lambda: |-
+        const uint32_t period = 2000; // full blue -> white -> blue breathe
+        uint32_t now = millis();
+        float phase = (now % period) / (float)period;
+        // Triangle 0 -> 1 -> 0: 0 = blue, 1 = white.
+        float t = (phase < 0.5f) ? (phase * 2.0f) : ((1.0f - phase) * 2.0f);
+        uint8_t rg = (uint8_t)(255.0f * t); // red+green ramp in to whiten the blue
+        for (int i = 0; i < it.size(); i++) {
+          it[i] = Color(rg, rg, 255);
+        }
+  # Cool-down: same pulse cadence/envelope as Pulse, but alternates purple/white each cycle.
+  - addressable_lambda:
+      name: CoolDownPulse
+      update_interval: 16ms
+      lambda: |-
+        const uint32_t period = 600; // 2 * 0.3s, matches the stock Pulse cadence
+        uint32_t now = millis();
+        float phase = (now % period) / (float)period;
+        // Triangle brightness envelope 50% -> 100% -> 50% (same range as Pulse).
+        float b = (phase < 0.5f) ? (0.5f + phase) : (1.5f - phase);
+        // Alternate color every full pulse cycle: purple, white, purple, white...
+        bool white = ((now / period) % 2) == 1;
+        uint8_t r = white ? 255 : 230; // 230 ~ 0.9 (finished magenta R)
+        uint8_t g = white ? 255 : 0;
+        uint8_t bl = white ? 255 : 179; // 179 ~ 0.7 (finished magenta B)
+        r = (uint8_t)(r * b);
+        g = (uint8_t)(g * b);
+        bl = (uint8_t)(bl * b);
+        for (int i = 0; i < it.size(); i++) {
+          it[i] = Color(r, g, bl);
+        }
   # - addressable_scan:
   #     name: Scan
   - addressable_lambda:

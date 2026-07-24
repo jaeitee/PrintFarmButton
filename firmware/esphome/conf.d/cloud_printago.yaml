@@ -76,6 +76,17 @@ binary_sensor:
     then:
     - script.execute: update_led_color
 
+- platform: template
+  name: "Is Cooling"
+  id: is_cooling
+  lambda: |-
+    return id(is_cooling).state;
+  icon: "mdi:snowflake"
+  internal: false
+  on_state:
+    then:
+    - script.execute: update_led_color
+
 script:
 - id: clear_printer_selection
   mode: queued
@@ -159,14 +170,58 @@ script:
   - lambda: |-
       // Clear all global printer status variables
       id(heat_soak_start_ms) = 0;
+      id(cool_down_start_ms) = 0;
+      id(job_had_heat_soak) = false;
       id(printer_confirmed_ready_sensor).publish_state(false);
       id(printer_is_available_sensor).publish_state(false);
       id(printer_is_online_sensor).publish_state(false);
       id(is_downloading).publish_state(false);
       id(is_warming).publish_state(false);
+      id(is_cooling).publish_state(false);
       id(printer_name).publish_state("");  // Clear printer name
 
       ESP_LOGI("printago", "Cleared all printer status globals - all set to false");
+
+# Post-print cool-down evaluation. Ends cool-down (locally, no API call) when the
+# configured max time elapses OR the selected bed/chamber temps reach threshold.
+# Called from the 5s interval and whenever MQTT refreshes temps while cooling.
+- id: evaluate_cool_down
+  mode: queued
+  then:
+  - if:
+      condition:
+        lambda: 'return id(cool_down_start_ms) != 0;'
+      then:
+      - lambda: |-
+          uint32_t mins = (uint32_t)id(cool_down_minutes).state;
+          if (mins < 1) mins = 60;
+          bool time_done = (millis() - id(cool_down_start_ms)) >= (mins * 60000UL);
+
+          // Effective temp waits: chamber is ignored if this printer doesn't report a chamber temp.
+          bool bed_wait = id(cool_down_wait_bed).state;
+          bool chamber_wait = id(cool_down_wait_chamber).state && id(chamber_temp_known);
+          bool temp_gate_active = bed_wait || chamber_wait;
+
+          bool temp_ok = false;
+          if (temp_gate_active) {
+            float thr = id(cool_down_temp).state;
+            bool bed_ok = true;
+            if (bed_wait) {
+              bed_ok = (id(last_bed_temp) > -999.0f) && (id(last_bed_temp) <= thr);
+            }
+            bool chamber_ok = true;
+            if (chamber_wait) {
+              chamber_ok = (id(last_chamber_temp) > -999.0f) && (id(last_chamber_temp) <= thr);
+            }
+            temp_ok = bed_ok && chamber_ok;
+          }
+
+          if (time_done || (temp_gate_active && temp_ok)) {
+            ESP_LOGI("printago", "Cool-down ended (%s)", time_done ? "max time" : "temp threshold");
+            id(cool_down_start_ms) = 0;
+            id(job_had_heat_soak) = false;
+            id(is_cooling).publish_state(false);
+          }
 
 - id: update_led_color
   mode: queued
@@ -204,12 +259,10 @@ script:
                 and:
                 - lambda: 'return id(is_downloading).state;'
               then:
+              # Downloading / starting — blue breathing to white and back (was green/Left2Right).
               - light.turn_on:
                   id: printfarmbutton_rgb
-                  red: 0.0
-                  green: 1.0
-                  blue: 0.0
-                  effect: Left2Right
+                  effect: DownloadPulse
                   brightness: 90%
               else:
               - if:
@@ -227,57 +280,68 @@ script:
                   else:
                   - if:
                       condition:
-                        and:
-                        - lambda: 'return id(printer_confirmed_ready_sensor).state;'
-                        - lambda: 'return id(printer_is_available_sensor).state;'
+                        lambda: 'return id(is_cooling).state;'
                       then:
-                      # Blue (Ready)
+                      # Cool-down — pulses like finished purple but alternates purple/white each cycle.
+                      # Base color/brightness are set by the CoolDownPulse addressable effect itself.
                       - light.turn_on:
                           id: printfarmbutton_rgb
-                          red: 0.0
-                          green: 0.0
-                          blue: 1.0
-                          effect: none
+                          effect: CoolDownPulse
                           brightness: 90%
                       else:
                       - if:
                           condition:
                             and:
-                            - lambda: 'return !id(printer_confirmed_ready_sensor).state;'
+                            - lambda: 'return id(printer_confirmed_ready_sensor).state;'
                             - lambda: 'return id(printer_is_available_sensor).state;'
                           then:
-                          # Magenta (Set Ready)
+                          # Blue (Ready)
                           - light.turn_on:
                               id: printfarmbutton_rgb
-                              red: 0.9
+                              red: 0.0
                               green: 0.0
-                              blue: 0.7
-                              effect: Pulse
+                              blue: 1.0
+                              effect: none
                               brightness: 90%
                           else:
                           - if:
                               condition:
                                 and:
-                                - lambda: 'return !id(printer_is_available_sensor).state;'
                                 - lambda: 'return !id(printer_confirmed_ready_sensor).state;'
+                                - lambda: 'return id(printer_is_available_sensor).state;'
                               then:
-                              # Green (Busy)
+                              # Magenta (Set Ready)
                               - light.turn_on:
                                   id: printfarmbutton_rgb
-                                  red: 0.0
-                                  green: 1.0
-                                  blue: 0.0
-                                  effect: none
+                                  red: 0.9
+                                  green: 0.0
+                                  blue: 0.7
+                                  effect: Pulse
                                   brightness: 90%
                               else:
-                              # Fallback/default
-                              - light.turn_on:
-                                  id: printfarmbutton_rgb
-                                  red: 1.0
-                                  green: 1.0
-                                  blue: 1.0
-                                  effect: none
-                                  brightness: 90%
+                              - if:
+                                  condition:
+                                    and:
+                                    - lambda: 'return !id(printer_is_available_sensor).state;'
+                                    - lambda: 'return !id(printer_confirmed_ready_sensor).state;'
+                                  then:
+                                  # Green (Busy)
+                                  - light.turn_on:
+                                      id: printfarmbutton_rgb
+                                      red: 0.0
+                                      green: 1.0
+                                      blue: 0.0
+                                      effect: none
+                                      brightness: 90%
+                                  else:
+                                  # Fallback/default
+                                  - light.turn_on:
+                                      id: printfarmbutton_rgb
+                                      red: 1.0
+                                      green: 1.0
+                                      blue: 1.0
+                                      effect: none
+                                      brightness: 90%
 
 # Physical button: skip heat soak while warming, otherwise mark bed clear/ready
 - id: handle_button_press
@@ -422,6 +486,10 @@ script:
                 if (response->status_code == 200) {
                   ESP_LOGI("printago", "Printer marked as ready");
                   id(ready_http_retries) = 0;
+                  // Bed cleared by operator: end any active cool-down.
+                  id(cool_down_start_ms) = 0;
+                  id(job_had_heat_soak) = false;
+                  id(is_cooling).publish_state(false);
                   // Optimistic UI: entities MQTT may lag after reconnect.
                   id(printer_confirmed_ready_sensor).publish_state(true);
                 } else {
@@ -825,10 +893,32 @@ text:
 
         id(mqtt_client_id).subscribe_json(stats_topic, [](const std::string &topic, JsonObject root) {
           ESP_LOGV("mqtt", "Received JSON on stats topic");
-          
+
+          // Capture previous availability for finish-edge detection (cool-down start).
+          bool prev_available = id(printer_is_available_sensor).state;
+
           // Handle basic status - simple approach
+          bool new_available = !root["isAvailable"].isNull() ? (bool)root["isAvailable"] : false;
           id(printer_is_online_sensor).publish_state(!root["isOnline"].isNull() ? (bool)root["isOnline"] : false);
-          id(printer_is_available_sensor).publish_state(!root["isAvailable"].isNull() ? (bool)root["isAvailable"] : false);
+          id(printer_is_available_sensor).publish_state(new_available);
+
+          // Cache bed/chamber temps from data.temps (no extra HTTP polling).
+          // -1000 sentinel = unknown. chamber_temp_known tracks whether this printer reports a chamber temp.
+          if (!root["data"].isNull()) {
+            JsonObject data = root["data"];
+            if (!data["temps"].isNull()) {
+              JsonObject temps = data["temps"];
+              if (!temps["bedTemp"].isNull()) {
+                id(last_bed_temp) = (float)temps["bedTemp"];
+              }
+              if (!temps["chamberTemp"].isNull()) {
+                id(last_chamber_temp) = (float)temps["chamberTemp"];
+                id(chamber_temp_known) = true;
+              } else {
+                id(chamber_temp_known) = false;
+              }
+            }
+          }
           
           // Handle printer name
           if (!root["metadata"].isNull()) {
@@ -954,12 +1044,36 @@ text:
                 if (mins < 1) mins = 15;
                 ESP_LOGI("printago", "Heat soak timer started (%u min from now, survives WiFi drops)", mins);
               }
+              // Remember this job heat-soaked so finish → cool-down.
+              id(job_had_heat_soak) = true;
             } else if (id(heat_soak_start_ms) != 0) {
               id(heat_soak_start_ms) = 0;
               ESP_LOGI("printago", "Heat soak timer cleared (no longer warming)");
             }
             id(is_warming).publish_state(warming_state);
+
+            // A new job clearly starting resets the heat-soak memory for cool-down.
+            if (download_state) {
+              id(job_had_heat_soak) = false;
+            }
+
+            // Post-print cool-down: start on the transition into finished/waiting-for-clear
+            // (busy/not-available -> available) for a job that heat-soaked, and not already ready.
+            bool confirmed_ready = id(printer_confirmed_ready_sensor).state;
+            bool finish_edge = new_available && !prev_available && !confirmed_ready;
+            if (finish_edge && id(job_had_heat_soak) && !warming_state) {
+              if (id(cool_down_start_ms) == 0) {
+                id(cool_down_start_ms) = millis();
+                id(is_cooling).publish_state(true);
+                uint32_t mins = (uint32_t)id(cool_down_minutes).state;
+                if (mins < 1) mins = 60;
+                ESP_LOGI("printago", "Cool-down started (up to %u min; survives WiFi drops)", mins);
+              }
+            }
           }
+
+          // Re-evaluate cool-down end whenever stats (incl. fresh temps) arrive.
+          id(evaluate_cool_down).execute();
         });
 
         // Subscribe to entities topic for confirmedReady
@@ -1073,6 +1187,57 @@ number:
     sorting_group_id: printago
     sorting_weight: 12
 
+- platform: template
+  name: "Cool-down (minutes)"
+  id: cool_down_minutes
+  icon: "mdi:timer-sand"
+  min_value: 1
+  max_value: 180
+  step: 1
+  mode: slider
+  restore_value: true
+  optimistic: true
+  initial_value: 60
+  web_server:
+    sorting_group_id: printago
+    sorting_weight: 13
+
+- platform: template
+  name: "Cool-down temp (°C)"
+  id: cool_down_temp
+  icon: "mdi:thermometer-low"
+  min_value: 20
+  max_value: 80
+  step: 1
+  mode: slider
+  restore_value: true
+  optimistic: true
+  initial_value: 45
+  web_server:
+    sorting_group_id: printago
+    sorting_weight: 14
+
+switch:
+- platform: template
+  name: "Cool-down wait: bed"
+  id: cool_down_wait_bed
+  icon: "mdi:radiator"
+  optimistic: true
+  restore_mode: RESTORE_DEFAULT_OFF
+  web_server:
+    sorting_group_id: printago
+    sorting_weight: 15
+
+- platform: template
+  name: "Cool-down wait: chamber"
+  id: cool_down_wait_chamber
+  icon: "mdi:home-thermometer"
+  optimistic: true
+  restore_mode: RESTORE_DEFAULT_OFF
+  web_server:
+    sorting_group_id: printago
+    sorting_weight: 16
+
 button:
 - platform: template
   name: "Check Printago Status"
@@ -1110,6 +1275,36 @@ globals:
   restore_value: false
   initial_value: '0'
 
+# millis() when post-print cool-down started. 0 = not cooling.
+# Survives WiFi/MQTT drops; cleared when cool-down ends, bed cleared, or new job starts.
+- id: cool_down_start_ms
+  type: uint32_t
+  restore_value: false
+  initial_value: '0'
+
+# True once heat soak was observed for the current job (drives whether finish → cool-down).
+- id: job_had_heat_soak
+  type: bool
+  restore_value: false
+  initial_value: 'false'
+
+# Latest bed/chamber temps from MQTT. -1000 = unknown / not reported this session.
+- id: last_bed_temp
+  type: float
+  restore_value: false
+  initial_value: '-1000.0f'
+
+- id: last_chamber_temp
+  type: float
+  restore_value: false
+  initial_value: '-1000.0f'
+
+# True only when the most recent stats message included a chamber temp value.
+- id: chamber_temp_known
+  type: bool
+  restore_value: false
+  initial_value: 'false'
+
 # HTTPS connect retries for button actions (ESP32-C3 MQTT+TLS socket pressure).
 - id: resume_http_retries
   type: uint8_t
@@ -1143,3 +1338,5 @@ interval:
           ESP_LOGI("printago", "Heat soak auto-resume: %u min elapsed", mins);
           id(resume_http_retries) = 0;
       - script.execute: resume_print
+  # Post-print cool-down: end on max time or temp threshold (local only, no API call).
+  - script.execute: evaluate_cool_down
